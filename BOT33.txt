@@ -1,0 +1,96 @@
+import discord
+from discord.ext import commands, tasks
+import requests
+import yfinance as yf
+import matplotlib.pyplot as plt
+
+# ---------------- CONFIG ----------------
+TOKEN = "MTQ0NzMyMzQ0NTIxMzAwODAwNQ.GMtE9P.tnExfKV0-BJkLG6U4s17wK-4PtdDlBRWNE37m8"       # Your Discord bot token
+NEWS_API_KEY = "3e6e67d1a921401499091b8f30217fe3" # Your NewsAPI key
+CHANNEL_ID = 1447307716954423409              # Replace with your Discord channel ID
+
+# ---------------- SETUP ----------------
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+# ---------------- EVENTS ----------------
+@bot.event
+async def on_ready():
+    print(f"✅ Bot online as {bot.user}")
+    forex_news_update.start()  # start auto news updates
+
+# ---------------- COMMANDS ----------------
+@bot.command()
+async def ping(ctx):
+    await ctx.send("Pong! ✅")
+
+@bot.command()
+async def forex(ctx):
+    """Get the latest Forex news"""
+    url = f"https://newsapi.org/v2/everything?q=forex OR currency OR USD OR GBP&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
+    response = requests.get(url).json()
+    if "articles" in response:
+        for article in response["articles"]:
+            if "youtube.com" not in article["url"]:  # skip YouTube links
+                title = article["title"]
+                source = article["source"]["name"]
+                link = article["url"]
+                await ctx.send(f"🌍 **Forex News Update**\n**{title}**\nSource: {source}\n{link}")
+                break
+
+@bot.command()
+async def gbp(ctx):
+    """Get the current GBP/USD price"""
+    pair = yf.Ticker("GBPUSD=X")
+    price = pair.history(period="1d")['Close'].iloc[-1]
+    await ctx.send(f"💷 **GBP/USD Price:** `{price}`")
+
+@bot.command()
+async def chart(ctx):
+    """Posts a GBP/USD chart"""
+    pair = yf.Ticker("GBPUSD=X")
+    data = pair.history(period="5d", interval="1h")  # last 5 days, hourly
+    plt.figure(figsize=(10,5))
+    plt.plot(data.index, data['Close'], label='Close Price')
+    plt.title("GBP/USD Last 5 Days")
+    plt.xlabel("Date")
+    plt.ylabel("Price")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("gbpusd_chart.png")
+    plt.close()
+    await ctx.send(file=discord.File("gbpusd_chart.png"))
+
+@bot.command()
+async def helpme(ctx):
+    """Shows all available commands"""
+    help_text = (
+        "📜 **Bot Commands:**\n"
+        "`!ping` - Test if the bot is online\n"
+        "`!forex` - Get the latest Forex news\n"
+        "`!gbp` - Get the current GBP/USD price\n"
+        "`!chart` - Show GBP/USD candlestick chart\n"
+        "`!helpme` - Show this help message"
+    )
+    await ctx.send(help_text)
+
+# ---------------- AUTO UPDATE ----------------
+@tasks.loop(minutes=30)
+async def forex_news_update():
+    channel = bot.get_channel(CHANNEL_ID)
+    if channel:
+        url = f"https://newsapi.org/v2/everything?q=forex OR USD OR GBP OR EUR&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
+        response = requests.get(url).json()
+        if "articles" in response:
+            for article in response["articles"]:
+                if "youtube.com" not in article["url"]:
+                    title = article["title"]
+                    link = article["url"]
+                    await channel.send(f"🌍 **Forex Market News**\n{title}\n{link}")
+                    break
+
+# ---------------- RUN BOT ----------------
+bot.run(TOKEN)
+
